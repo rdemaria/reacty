@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-import operator, builtins
+import operator, builtins, math
 
 _binops = {
     "+": operator.add,
@@ -71,8 +71,8 @@ class Ref:
             return value
 
     # order of precedence
-    def __call__(self, *args, **nargs):
-        return CallRef(self, *args, **nargs)
+    def __call__(self, *args, **kwargs):
+        return CallRef(self, args, kwargs)
 
     def __getitem__(self, item):
         return ItemRef(self._get_value(), item)
@@ -263,7 +263,7 @@ class AttrRef(Ref):
 
     def __repr__(self):
         idd = id(self._owner)
-        own = f"<{self._owner.__class__.__name__} {idd:x}>"
+        own = f"{self._owner.__class__.__name__}@{idd:x}"
         return f"{own}.{self._attr}"
 
 
@@ -371,12 +371,16 @@ for st, op in _binops.items():
 for st, op in _unops.items():
     fn = op.__name__.replace("_", "")
     cn = f"{fn.capitalize()}Ref"
+    if cn in gbl:
+        raise ValueError
     mn = f"__{fn}__"
     gbl[cn] = type(cn, (UnOpRef,), {"_op": op, "_st": st})
 
 for st, op in _builtins.items():
     fn = op.__name__.replace("_", "")
-    cn = f"{fn.capitalize()}Ref"
+    cn = f"B{fn.capitalize()}Ref"
+    if cn in gbl:
+        raise ValueError
     mn = f"__{fn}__"
     gbl[cn] = type(cn, (BuiltinRef,), {"_op": op, "_st": st})
 
@@ -385,13 +389,13 @@ for st, op in _builtins.items():
 class CallRef(Ref):
     _func: object
     _args: tuple
-    _nargs: tuple
+    _kwargs: tuple
 
     def _get_value(self):
         func = Ref._mk_value(self._func)
         args = [Ref._mk_value(a) for a in self._args]
-        nargs = {n: Ref._mk_value(v) for n, v in self._nargs}
-        return self._func(*args, **dict(nargs))
+        kwargs = {n: Ref._mk_value(v) for n, v in self._kwargs}
+        return self._func(*args, **dict(kwargs))
 
     def _get_dependencies(self, out=None):
         if out is None:
@@ -401,11 +405,17 @@ class CallRef(Ref):
         for arg in self._args:
             if isinstance(arg, Ref):
                 arg._get_dependencies(out)
-        for name, arg in self._nargs:
+        for name, arg in self._kwargs:
             if isinstance(arg, Ref):
                 arg._get_dependencies(out)
         return out
 
     def __repr__(self):
-        return f"{self._func}(...)"
+        args=[]
+        for aa in self._args:
+            args.append(repr(aa))
+        for k,v in self._kwargs:
+            args.append(f"{k}={v}")
+        args=','.join(args)
+        return f"{self._func}({args})"
 

@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from .refs import AttrRef, CallRef
+from .refs import AttrRef, CallRef, Ref
 
 def _traverse(ref, rdeps, lst, st):  # breath first sorting
     if ref in rdeps:
@@ -20,8 +20,8 @@ class FuncWrapper:
     def __init__(self, func):
         self.func = func
 
-    def __call__(self, *args, **nargs):
-        return CallRef(self.func, args, tuple(nargs.items()))
+    def __call__(self, *args, **kwargs):
+        return CallRef(self.func, args, tuple(kwargs.items()))
 
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -30,13 +30,13 @@ class Dependency:
     dependencies: tuple
     callback: object
     args: tuple = field(default_factory=tuple)
-    nargs: tuple = field(default_factory=tuple)
+    kwargs: tuple = field(default_factory=tuple)
 
     def __repr__(self):
         return f"Dependency({self.target},{self.dependencies},...)"
 
     def run(self):
-        res = self.callback(*self.args, **dict(self.nargs))
+        res = self.callback(*self.args, **dict(self.kwargs))
         if self.target is not None:
             self.target._set(res)
 
@@ -75,24 +75,20 @@ class DepManager:
                 orig = name[:-1]
                 if hasattr(self, orig):
                     return AttrRef(self, orig)
-            else:
-                raise AttributeError
+            raise AttributeError
 
         def __setattr__(self, name, value):
-            if name.endswith("_"):
-                orig = name[:-1]
-                if hasattr(self, orig):
-                   self._dep_remove(orig)
-                   ref = AttrRef(self, orig)
-                   if isinstance(value, Ref):
-                       dependencies = value._get_dependencies()
-                       dep = Dependency(ref, tuple(dependencies), value._get_value)
-                       self._dep_add(orig, dep)
-                       value = value._get_value()
-                   self._silent_setattr(orig, value)
-                   self._notify.apply_set(ref)
+            ref = AttrRef(self, name)
+            if isinstance(value, Ref):
+                self._dep_remove(name)
+                dependencies = value._get_dependencies()
+                dep = Dependency(ref, tuple(dependencies), value._get_value)
+                self._dep_add(name, dep)
+                value = value._get_value()
+                self._silent_setattr(name, value)
             else:
                 self._silent_setattr(name, value)
+            self._notify.apply_set(ref)
 
         def _dep_add(self, name, dep):
             # print("Add dep", dep)

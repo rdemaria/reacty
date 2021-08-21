@@ -5,4 +5,3 @@ Add magic setitem, getitem, _attr, _item
 Consider a.b_=<callable> , a.b_=ref
 Replace silent_set with super()
 Layered dependencies sorting and plotting
-
