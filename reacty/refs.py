@@ -75,13 +75,26 @@ class Ref:
         return CallRef(self, args, kwargs)
 
     def __getitem__(self, item):
-        return ItemRef(self._get_value(), item)
+        owner=self._get_value()
+        return ItemRef(owner, item,getattr(owner,'_notify',None))
+
+    def __setitem__(self,key,value):
+        from .dependencies import Dependency
+        if isinstance(value, Ref):
+            dependencies = value._get_dependencies()
+            dep = Dependency(self[key], tuple(dependencies), value._get_value)
+            self._notify.register(dep)
+            value=value._get_value()
+        target=self._get_value()
+        target[key]=value
 
     def __getattr__(self, attr):
         if not attr.startswith("_"):
-            return AttrRef(self._get_value(), attr)
+            owner=self._get_value()
+            return AttrRef(owner, attr,getattr(owner,'_notify',None))
         else:
-            raise AttributeError
+            raise AttributeError(f"Cannot find {attr} or {attr}_")
+
 
     # numerical unary  operator
     def __neg__(self):
@@ -244,6 +257,7 @@ class Ref:
 class AttrRef(Ref):
     _owner: object
     _attr: str
+    _notify: object
 
     def _get_value(self):
         owner = Ref._mk_value(self._owner)
@@ -267,10 +281,14 @@ class AttrRef(Ref):
         return f"{own}.{self._attr}"
 
 
-@dataclass(frozen=True, unsafe_hash=True)
+@dataclass(frozen=True)
 class ItemRef(Ref):
     _owner: object
-    _attr: int
+    _item: int
+    _notify: object
+
+    def __hash__(self):
+        return hash((id(self._owner),self._item))
 
     def _get_value(self):
         owner = Ref._mk_value(self._owner)
@@ -291,9 +309,10 @@ class ItemRef(Ref):
         self._owner._silent_getitem(self._item, value)
 
     def __repr__(self):
-        idd = id(self._owner) % (2 ** 16)
+        idd = id(self._owner)
         own = f"{self._owner.__class__.__name__}({idd:x})"
         return f"{own}[{self._item}]"
+
 
 
 @dataclass(frozen=True, unsafe_hash=True)

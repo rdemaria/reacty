@@ -1,9 +1,6 @@
 from dataclasses import dataclass, field
-import logging
 
 from .refs import AttrRef, CallRef, Ref
-
-logger=logging.getLogger(__name__)
 
 def _traverse(ref, rdeps, lst, st):  # breath first sorting
     if ref in rdeps:
@@ -36,13 +33,13 @@ class Dependency:
     kwargs: tuple = field(default_factory=tuple)
 
     def __repr__(self):
-        return f"Dependency({self.target},{self.dependencies})"
+        return f"Dependency({self.target},{self.dependencies},...)"
 
     def run(self):
-        logger.info(f"Run {self}")
         res = self.callback(*self.args, **dict(self.kwargs))
         if self.target is not None:
             self.target._set(res)
+
 
 
 class DepManager:
@@ -51,18 +48,18 @@ class DepManager:
         self.rdeps = {}
 
     def apply_set(self, ref):
-        logger.info(f"Apply_set {ref}")
+        # print("Setting", ref, ref in self.rdeps)
         for dep in traverse(ref, self.rdeps):
             dep.run()
 
     def register(self, dep):
-        logger.info(f"Register {dep}")
+        # print("Register", dep)
         self.deps.add(dep)
         for ref in dep.dependencies:
             self.rdeps.setdefault(ref, set()).add(dep)
 
     def unregister(self, dep):
-        logger.info(f"Register {dep}")
+        # print("Unregister", dep)
         self.deps.remove(dep)
         for ref in dep.dependencies:
             self.rdeps[ref].remove(dep)
@@ -70,36 +67,45 @@ class DepManager:
                 del self.rdeps[ref]
 
     def class_(self, cls):
-        cls_setattr=cls.__setattr__
         def _silent_setattr(self, name, value):
-            cls_setattr(self, name, value)
+            object.__setattr__(self, name, value)
 
         def __getattr__(self, name):
             if name.endswith("_"):
                 orig = name[:-1]
                 if hasattr(self, orig):
-                    return AttrRef(self, orig, self._notify)
-            raise AttributeError
+                    return AttrRef(self, orig)
+            else:
+                raise AttributeError
 
         def __setattr__(self, name, value):
-            ref = AttrRef(self, name, self._notify)
-            if isinstance(value, Ref):
-                self._dep_remove(name)
-                dependencies = value._get_dependencies()
-                dep = Dependency(ref, tuple(dependencies), value._get_value)
-                self._dep_add(name, dep)
-                value = value._get_value()
-            self._silent_setattr(name, value)
-            self._notify.apply_set(ref)
+            if name.endswith("_"):
+                orig = name[:-1]
+                if hasattr(self, orig):
+                   self._dep_remove(orig)
+                   ref = AttrRef(self, orig)
+                   if isinstance(value, Ref):
+                       dependencies = value._get_dependencies()
+                       dep = Dependency(ref, tuple(dependencies), value._get_value)
+                       self._dep_add(orig, dep)
+                       value = value._get_value()
+                   self._silent_setattr(orig, value)
+                   self._notify.apply_set(ref)
+            else:
+                self._silent_setattr(name, value)
 
         def _dep_add(self, name, dep):
+            # print("Add dep", dep)
             if not hasattr(self, "_deps"):
                 self._deps = {}
             self._deps[name] = dep
             self._notify.register(dep)
+            # print(self._notify.deps)
+            # print(self._notify.rdeps)
 
         def _dep_remove(self, name):
             if hasattr(self, "_deps") and name in self._deps:
+                # print("Remove dep", name)
                 self._notify.unregister(self._deps[name])
                 del self._deps[name]
 

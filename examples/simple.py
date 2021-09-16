@@ -1,6 +1,10 @@
 from reacty import reactive
 from math import sqrt
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 @reactive.class_
 class C:
     pass
@@ -31,3 +35,9 @@ print(c1.b,c1.c,c1.d)
 print("Update value, recomputation")
 c1.a=15
 print(c1.b,c1.c,c1.d)
+
+#print("Update value, recomputation")
+#c1.lst=[]
+
+
+
